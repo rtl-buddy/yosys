@@ -252,7 +252,7 @@ CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL)
 ifeq ($(ENABLE_LTO),1)
 LINKFLAGS += -fuse-ld=lld
 endif
-ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H $(ABC_ARCHFLAGS)"
+ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H -std=c++11 $(ABC_ARCHFLAGS)"
 LTOFLAGS := $(CLANG_LTO)
 
 ifneq ($(SANITIZER),)
@@ -273,7 +273,7 @@ endif
 else ifeq ($(CONFIG),gcc)
 CXX = g++
 CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL)
-ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H $(ABC_ARCHFLAGS)"
+ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H -std=c++11 $(ABC_ARCHFLAGS)"
 
 else ifeq ($(CONFIG),gcc-static)
 LINKFLAGS := $(filter-out -rdynamic,$(LINKFLAGS)) -static

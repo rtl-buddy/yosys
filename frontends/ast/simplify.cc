@@ -359,8 +359,40 @@ static int size_packed_struct(AstNode *snode, int base_offset)
 		auto node = it->get();
 		int width;
 		if (node->type == AST_STRUCT || node->type == AST_UNION) {
-			// embedded struct or union
-			width = size_packed_struct(node, base_offset + offset);
+			// embedded struct or union.
+			// Inline struct/union members declared with an array dimension push the
+			// range as a child of the struct node itself (e.g. struct packed{...} CH[16]).
+			// Strip those range children before recursing so size_packed_struct does not
+			// hit the AST_STRUCT_ITEM assertion, and multiply the element width by the
+			// array size to get the correct total contribution.
+			int array_multiplier = 1;
+			for (auto cit = node->children.begin(); cit != node->children.end(); ) {
+				auto *child = cit->get();
+				if (child->type == AST_RANGE) {
+					if (child->children.size() == 1)
+						array_multiplier = child->range_left; // C-style [N]
+					else
+						array_multiplier = std::abs(child->range_left - child->range_right) + 1;
+					cit = node->children.erase(cit);
+				} else if (child->type == AST_MULTIRANGE) {
+					for (auto &rn : child->children) {
+						if (rn->children.size() == 1)
+							array_multiplier *= rn->range_left;
+						else
+							array_multiplier *= std::abs(rn->range_left - rn->range_right) + 1;
+					}
+					cit = node->children.erase(cit);
+				} else {
+					++cit;
+				}
+			}
+			width = size_packed_struct(node, base_offset + offset) * array_multiplier;
+		}
+		else if (node->type == AST_RANGE || node->type == AST_MULTIRANGE) {
+			// Array dimension pushed onto this struct instance by the parser
+			// (inline struct array: struct packed{...} name[N]).
+			// Skip it here — the outer caller extracts it and applies the multiplier.
+			continue;
 		}
 		else {
 			log_assert(node->type == AST_STRUCT_ITEM);
@@ -2102,6 +2134,15 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 			// Add packed dimensions.
 			if (add_packed_dimensions) {
 				auto& packed = children[1];
+				// For struct/union types, convert to a packed wire first so that
+				// prepend_ranges operates on a range child rather than a struct member.
+				// Calling prepend_ranges directly on a struct's children[0] (which is a
+				// member node, not a range) would corrupt the clone and later cause
+				// size_packed_struct to hit an assertion when it sees AST_MULTIRANGE
+				// where it expects AST_STRUCT_ITEM.
+				if (newNode->type == AST_STRUCT || newNode->type == AST_UNION) {
+					newNode = make_packed_struct(newNode.get(), newNode->str, newNode->attributes);
+				}
 				if (newNode->children.empty())
 					newNode->children.insert(newNode->children.begin(), packed->clone());
 				else

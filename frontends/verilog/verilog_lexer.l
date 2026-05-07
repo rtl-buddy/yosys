@@ -364,7 +364,7 @@ TIME_SCALE_SUFFIX [munpf]?s
 "specparam"    { return parser::make_TOK_SPECPARAM(out_loc); }
 "package"      { SV_KEYWORD(parser::make_TOK_PACKAGE(out_loc)); }
 "endpackage"   { SV_KEYWORD(parser::make_TOK_ENDPACKAGE(out_loc)); }
-"import"       { SV_KEYWORD(parser::make_TOK_IMPORT(out_loc)); }
+"import"       { extra->in_import_stmt = true; SV_KEYWORD(parser::make_TOK_IMPORT(out_loc)); }
 "interface"    { SV_KEYWORD(parser::make_TOK_INTERFACE(out_loc)); }
 "endinterface" { SV_KEYWORD(parser::make_TOK_ENDINTERFACE(out_loc)); }
 "modport"      { SV_KEYWORD(parser::make_TOK_MODPORT(out_loc)); }
@@ -523,13 +523,14 @@ supply1 { return parser::make_TOK_SUPPLY1(out_loc); }
 [a-zA-Z_][a-zA-Z0-9_]*::[a-zA-Z_$][a-zA-Z0-9_$]* {
 	// package qualifier
 	auto s = std::string("\\") + YYText();
-	if (extra->pkg_user_types.count(s) > 0) {
+	if (extra->pkg_user_types.count(s) > 0 && !extra->in_import_stmt) {
 		// package qualified typedefed name
 		auto val = std::make_unique<std::string>(s);
 		return parser::make_TOK_PKG_USER_TYPE(std::move(val), out_loc);
 	}
 	else {
-		// backup before :: just return first part
+		// backup before :: just return first part (also used in import context
+		// to let the parser tokenise pkg and :: separately)
 		size_t len = strchr(YYText(), ':') - YYText();
 		yyless(len);
 		auto val = std::make_unique<std::string>(std::string("\\") + YYText());

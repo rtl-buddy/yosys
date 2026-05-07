@@ -83,6 +83,7 @@
 			struct AstNode *current_ast, *current_ast_mod;
 			int current_function_or_task_port_id;
 			std::vector<char> case_type_stack;
+			bool in_import_stmt = false;
 			bool do_not_require_port_stubs;
 			bool current_wire_rand, current_wire_const, current_wire_automatic;
 			bool current_modport_input, current_modport_output;
@@ -834,6 +835,7 @@ import_stmt:
 		auto import_node = std::make_unique<AstNode>(@$, AST_IMPORT);
 		import_node->str = *$2;
 		extra->ast_stack.back()->children.push_back(std::move(import_node));
+		extra->in_import_stmt = false;
 	} |
 	TOK_IMPORT TOK_ID TOK_PACKAGESEP {
 		// Start a specific import: create and push the AST_IMPORT node
@@ -842,6 +844,7 @@ import_stmt:
 	} import_item_list TOK_SEMICOL {
 		// Done collecting specific items, pop the AST_IMPORT node
 		extra->ast_stack.pop_back();
+		extra->in_import_stmt = false;
 	};
 
 import_item_list:

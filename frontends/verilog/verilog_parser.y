@@ -1980,7 +1980,7 @@ struct_body: opt_packed TOK_LCURL struct_member_list TOK_RCURL
 
 opt_packed:
 	TOK_PACKED opt_signed_struct |
-	%empty { err_at_loc(@$, "Only PACKED supported at this time"); };
+	%empty; // unpacked structs are treated as packed for synthesis
 
 opt_signed_struct:
 	  TOK_SIGNED		{ extra->astbuf2->is_signed = true; }

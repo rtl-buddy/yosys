@@ -131,6 +131,7 @@ struct AbcConfig
 	std::vector<std::string> liberty_files;
 	std::vector<std::string> genlib_files;
 	std::string constr_file;
+	std::string abc_liberty_args;
 	vector<int> lut_costs;
 	std::string delay_target;
 	std::string sop_inputs;
@@ -1030,14 +1031,21 @@ void AbcModuleState::prepare_module(RTLIL::Design *design, RTLIL::Module *module
 			run_abc.dont_use_args += stringf("-X \"%s\" ", dont_use_cell);
 		}
 
-		std::string merged_scl = convert_liberty_files_to_merged_scl(config.liberty_files, run_abc.dont_use_args, config.exe_file);
+		std::string merged_scl;
+		if (config.abc_liberty_args.empty()) {
+			merged_scl = convert_liberty_files_to_merged_scl(config.liberty_files, run_abc.dont_use_args, config.exe_file);
+		}
 		if (!merged_scl.empty()) {
 			run_abc.abc_script += stringf("read_scl \"%s\" ; ", merged_scl.c_str());
 		} else if(!config.liberty_files.empty()) {
-			log_warning("ABC: Merged scl conversion failed, using liberty format\n");
+			if (!config.abc_liberty_args.empty()) {
+				log("ABC: abc_liberty_args provided, using liberty format\n");
+			} else {
+				log_warning("ABC: Merged scl conversion failed, using liberty format\n");
+			}
 			bool first_lib = true;
 			for (std::string liberty_file : config.liberty_files) {
-				run_abc.abc_script += stringf("read_lib %s %s -w \"%s\" ; ", run_abc.dont_use_args, first_lib ? "" : "-m", liberty_file);
+				run_abc.abc_script += stringf("read_lib %s %s %s -w \"%s\" ; ", run_abc.dont_use_args, first_lib ? "" : "-m", config.abc_liberty_args, liberty_file);
 				first_lib = false;
 			}
 		}
@@ -1557,7 +1565,7 @@ void AbcModuleState::extract(AbcSigMap &assign_map, RTLIL::Design *design, RTLIL
 	{
 		if (builtin_lib)
 		{
-			cell_stats[RTLIL::unescape_id(c->type)]++;
+			cell_stats[c->type.unescape()]++;
 			if (c->type.in(ID(ZERO), ID(ONE))) {
 				RTLIL::SigSig conn;
 				RTLIL::IdString name_y = remap_name(c->getPort(ID::Y).as_wire()->name);
@@ -1698,7 +1706,7 @@ void AbcModuleState::extract(AbcSigMap &assign_map, RTLIL::Design *design, RTLIL
 			}
 		}
 		else
-			cell_stats[RTLIL::unescape_id(c->type)]++;
+			cell_stats[c->type.unescape()]++;
 
 		if (c->type.in(ID(_const0_), ID(_const1_))) {
 			RTLIL::SigSig conn;
@@ -1927,8 +1935,10 @@ struct AbcPass : public Pass {
 		log("        file format).\n");
 		log("\n");
 		log("    -dont_use <cell_name>\n");
-		log("        generate netlists for the specified cell library (using the liberty\n");
-		log("        file format).\n");
+		log("        avoid usage of the technology cell <cell_name> when mapping the design.\n");
+		log("        this option can be used multiple times with different cell names and\n");
+		log("        supports simple glob patterns in the cell name.\n");
+		log("        only supported with Liberty cell libraries.\n");
 		log("\n");
 		log("    -genlib <file>\n");
 		log("        generate netlists for the specified cell library (using the SIS Genlib\n");
@@ -2034,6 +2044,10 @@ struct AbcPass : public Pass {
 		log("        run the 'dress' command after all other ABC commands. This aims to\n");
 		log("        preserve naming by an equivalence check between the original and\n");
 		log("        post-ABC netlists (experimental).\n");
+		log("\n");
+		log("    -liberty_args <string>\n");
+		log("        when -liberty is used, also pass the specified arguments to ABC\n");
+		log("        command \"read_lib\". Example: -liberty_args \"-G 250\"\n");
 		log("\n");
 		log("When no target cell library is specified the Yosys standard cell library is\n");
 		log("loaded into ABC before the ABC script is executed.\n");
@@ -2215,6 +2229,14 @@ struct AbcPass : public Pass {
 			}
 			if (arg == "-markgroups") {
 				config.markgroups = true;
+				continue;
+			}
+			if (arg == "-liberty_args" && argidx+1 < args.size()) {
+				config.abc_liberty_args = args[++argidx];
+				if (!config.abc_liberty_args.empty()) {
+					if (config.abc_liberty_args[0] == '\"' && config.abc_liberty_args.back() == '\"')
+						config.abc_liberty_args = config.abc_liberty_args.substr(1, config.abc_liberty_args.size() - 2);
+				}
 				continue;
 			}
 			break;
@@ -2427,7 +2449,7 @@ struct AbcPass : public Pass {
 		for (auto mod : design->selected_modules())
 		{
 			if (mod->processes.size() > 0) {
-				log("Skipping module %s as it contains processes.\n", log_id(mod));
+				log("Skipping module %s as it contains processes.\n", mod);
 				continue;
 			}
 

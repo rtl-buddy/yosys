@@ -406,18 +406,6 @@ struct AST_INTERNAL::ProcessGenerator
 				if (GetSize(syncrule->signal) != 1)
 					always->input_error("Found posedge/negedge event on a signal that is not 1 bit wide!\n");
 				addChunkActions(syncrule->actions, subst_lvalue_from, subst_lvalue_to, true);
-				// Automatic (nosync) variables must not become flip-flops: remove
-				// them from clocked sync rules so that proc_dff does not infer
-				// an unnecessary register for a purely combinational temporary.
-				syncrule->actions.erase(
-					std::remove_if(syncrule->actions.begin(), syncrule->actions.end(),
-						[](const RTLIL::SigSig &ss) {
-							for (auto &chunk : ss.first.chunks())
-								if (chunk.wire && chunk.wire->get_bool_attribute(ID::nosync))
-									return true;
-							return false;
-						}),
-					syncrule->actions.end());
 				proc->syncs.push_back(syncrule);
 			}
 		if (proc->syncs.empty()) {
@@ -1212,6 +1200,15 @@ void AstNode::detectSignWidthWorker(int &width_hint, bool &sign_hint, bool *foun
 		sign_hint = false;
 		break;
 
+	case AST_ASSIGN_PATTERN:
+		for (auto& child : children) {
+			sub_width_hint = 0;
+			sub_sign_hint = true;
+			child->detectSignWidthWorker(sub_width_hint, sub_sign_hint);
+		}
+		sign_hint = false;
+		break;
+
 	case AST_NEG:
 	case AST_BIT_NOT:
 	case AST_POS:
@@ -1824,6 +1821,9 @@ RTLIL::SigSpec AstNode::genRTLIL(int width_hint, bool sign_hint)
 			return sig;
 		}
 
+	case AST_ASSIGN_PATTERN:
+		input_error("Assignment pattern is only supported for whole unpacked array assignments.\n");
+
 	// generate cells for unary operations: $not, $pos, $neg
 	if (0) { case AST_BIT_NOT: type_name = ID($not); }
 	if (0) { case AST_POS:     type_name = ID($pos); }
@@ -2185,10 +2185,10 @@ RTLIL::SigSpec AstNode::genRTLIL(int width_hint, bool sign_hint)
 					const auto* value = child->children[0].get();
 					if (value->type == AST_REALVALUE)
 						log_file_warning(*location.begin.filename, location.begin.line, "Replacing floating point parameter %s.%s = %f with string.\n",
-								log_id(cell), log_id(paraname), value->realvalue);
+								cell, paraname.unescape(), value->realvalue);
 					else if (value->type != AST_CONSTANT)
 						input_error("Parameter %s.%s with non-constant value!\n",
-								log_id(cell), log_id(paraname));
+								cell, paraname.unescape());
 					cell->parameters[paraname] = value->asParaConst();
 					continue;
 				}

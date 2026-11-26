@@ -264,6 +264,7 @@ def aiw2yw(input, mapfile, output, skip_x, present_only):
                 bit = None
             if bit is None:
                 missing.add(i)
+                continue
             elif present_only:
                 seen.add(i)
 
